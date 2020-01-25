@@ -1,0 +1,123 @@
+module regfiles (
+
+    input clk,  // clock
+    input rst,  // reset
+    
+    input rise,                    // (from mojo top) to increment current counter every rise
+    
+    input restart,                 // (from control unit) to initialise current counter and streak number
+    input increment_old_counter,   // (from control unit) to increment old counter when time is up
+    input update_hs,               // (from control unit) to update highscore at UPDATEHS
+    
+    input data[16],    // data in
+    input werf,        // write enable
+    input wasel[3],    // write address
+    input ra1sel[2],   // address port 1
+    input ra2sel[4],   // address port 2
+    
+    output out_a[16],  // read port a
+    output out_b[16],  // read port b
+    
+    output current_counter[16],    // pass to control unit for main display
+    output player_score[16],       // pass to control unit for main display at the end
+    
+    output high_score[16]          // pass to mojo top for high score display
+    
+  ) {
+  
+  .clk(clk){
+    dff highScore[16];
+    
+    .rst(rst){
+      // registers for input a of alu
+      dff playerScore[16];
+      dff currentCounter[16];
+      dff temp[16];
+      
+      // registers for input b of alu
+      dff oldCounter[16];
+      dff terminatingNo[16];
+      dff streakNo[16];
+      dff constant0[16];
+      dff constant1[16];
+      dff constant5[16];
+      dff constant7[16];
+      dff constant10[16];
+      
+    }
+  }
+  always {
+  
+    // Registers holding constant value
+    terminatingNo.d = 120;
+    constant0.d = 0;
+    constant1.d = 1;
+    constant5.d = 5;
+    constant7.d = 7;
+    constant10.d = 10;
+    
+    // Always increment current counter
+    if(rise){
+      currentCounter.d = currentCounter.q + 3; 
+    }
+    
+    // Pass current counter and player score to control unit for main display
+    current_counter = currentCounter.q;
+    player_score = playerScore.q;
+    
+    // Pass to mojo top for highscore display
+    high_score = highScore.q;
+    
+    // At state GO, initialise register values
+    if (restart) {
+      currentCounter.d = 0;
+      streakNo.d = 1;
+    }        
+    
+    // When time is up at SHLDNOTPRESS and WAIT, increment old counter
+    if (increment_old_counter) {
+      oldCounter.d = currentCounter.q;
+    }
+    
+    // Update highscore with player score at UPDATE HS
+    if (update_hs) {
+      highScore.d = playerScore.q;
+    }
+  
+    // Write port
+    if (werf) {
+      case (wasel) {
+        b0000: playerScore.d = data;
+        b0001: currentCounter.d = data;
+        b0010: temp.d = data;
+        b0011: streakNo.d = data;
+        b0100: oldCounter.d = data;
+        b0101: highScore.d = data;
+      }
+    }
+    
+    // Read Port A
+    case (ra1sel) {
+      b00: out_a = playerScore.q;
+      b01: out_a = currentCounter.q;
+      b10: out_a = temp.q;
+      b11: out_a = streakNo.q;
+      default: out_a = 16b0;
+    }
+    
+    // Read Port B
+    case (ra2sel) {
+      b0000: out_b = streakNo.q;
+      b0001: out_b = oldCounter.q;
+      b0010: out_b = highScore.q;
+      b0011: out_b = terminatingNo.q;
+      b0100: out_b = constant0.q;
+      b0101: out_b = constant1.q;
+      b0110: out_b = constant5.q;
+      b0111: out_b = constant7.q;
+      b1000: out_b = constant10.q;
+      default: out_b = 16b0;
+    }
+    
+  }
+}

@@ -1,0 +1,141 @@
+module mojo_top (
+    input clk,              // 50MHz clock
+    input rst_n,            // reset button (active low)
+    output led [8],         // 8 user controllable LEDs
+    output spi_miso,        // AVR SPI MISO
+    output spi_channel [4], // AVR general purpose pins (used by default to select ADC channel)
+    output avr_rx,          // AVR RX (FPGA TX)
+    output io_seg [8],      // Main external 7-segment LEDs 
+    output io_sel [4],      // Digit select on Main external 7-segment
+    output io_seghs [8],   // Highscore external 7-segment LEDs
+    output io_selhs [4],   // Digit select on Highscore external 7-segment
+    input green_button,    // The Huge Green Button for primary input
+    input switch
+  ) {
+  
+  sig rst;    // reset signal
+  
+  .clk(clk) {
+    
+    .rst(rst){
+      // Counters for transition
+      stateCounter sc; 
+      counter ctr (#SIZE(2), #DIV(16));
+      // Beta architecture
+      beta gameMachine;
+    }
+    
+    // The reset conditioner is used to synchronize the reset signal to the FPGA
+    // clock. This ensures the entire FPGA comes out of reset at the same time.
+    reset_conditioner reset_cond;
+    
+    button_conditioner btn_cond;
+    edge_detector edge_dt(#RISE(1), #FALL(0));
+  }
+  
+  sig easy_mode[1];
+  sig pressed[1];
+  sig rise[1];
+  sig hold[1];
+  sig high_score[16];
+  
+  // COUNTER DECLARATION
+  sig quotientHS1[16];
+  sig quotientHS10[16];
+  sig tempHS10[16];
+  
+  // FOR MAIN DISPLAY
+  seven_seg mainSeg3; 
+  seven_seg mainSeg2;
+  seven_seg mainSeg1;
+  seven_seg mainSeg0;
+  
+  // FOR HS DISPLAY
+  seven_seg hsSeg3; 
+  seven_seg hsSeg2;
+  seven_seg hsSeg1;
+  seven_seg hsSeg0;
+  
+  always {
+    reset_cond.in = ~rst_n; // input raw inverted reset signal
+    rst = reset_cond.out;   // conditioned reset
+    
+    led = 8h00;             // turn LEDs off
+    spi_miso = bz;          // not using SPI
+    spi_channel = bzzzz;    // not using flags
+    avr_rx = bz;            // not using serial port
+    io_seg = 8hff;          // turn main segments off
+    io_sel = 4hf;           // select no digits (main)
+    io_seghs = 8hff;        // turn highscore segment off
+    io_selhs= 4hf;          // select no digits (highscore)
+
+    // avoid debouncing issue
+    btn_cond.in = green_button;
+    edge_dt.in = btn_cond.out;
+    pressed = edge_dt.out;
+    
+    // Set easy or hard mode
+    if(switch){
+      rise = sc.easy;
+      hold = sc.hold;
+      easy_mode = 1;
+    } else{
+      rise = sc.hard;
+      hold = sc.hold;
+      easy_mode = 0;
+    }
+    
+    // Pass signals to gameMachine
+    gameMachine.easy_mode = easy_mode;
+    gameMachine.pressed = pressed;
+    gameMachine.rise = rise;
+    gameMachine.sc_hold = hold;
+    
+    // Get signals from gameMachine
+    high_score = gameMachine.high_score;
+    // For displaying numbers on main screen
+    mainSeg0.char = gameMachine.mainSeg0_char;
+    mainSeg1.char = gameMachine.mainSeg1_char;
+    mainSeg2.char = gameMachine.mainSeg2_char;
+    mainSeg3.char = gameMachine.mainSeg3_char;
+    
+    // For displaying updated highscore on highscore segment display
+    // One's place
+    quotientHS1 = high_score / 10;
+    hsSeg0.char = high_score - (10 * quotientHS1);
+    // Ten's place
+    tempHS10 = high_score / 10;
+    quotientHS10 = tempHS10 / 10;
+    hsSeg1.char = tempHS10 - (10 * quotientHS10);
+    hsSeg2.char = 15; // default no light on hundred's place
+    hsSeg3.char = 15; // default no light on thousand's place
+
+    case(ctr.value){
+      0:
+        io_seg = ~mainSeg0.segs;
+        io_sel = 4b0001;
+        io_seghs = ~hsSeg0.segs;
+        io_selhs = 4b0001;
+      1: 
+        io_seg = ~mainSeg1.segs;
+        io_sel = 4b0010;
+        io_seghs = ~hsSeg1.segs;
+        io_selhs = 4b0010;
+      2:
+        io_seg = ~mainSeg2.segs;          
+        io_sel = 4b0100;
+        io_seghs = ~hsSeg2.segs;
+        io_selhs = 4b0100;
+      3: 
+        io_seg = ~mainSeg3.segs;
+        io_sel = 4b1000;
+        io_seghs = ~hsSeg3.segs;
+        io_selhs = 4b1000;
+      default:
+        io_seg = ~mainSeg0.segs;
+        io_sel = 4b0001;
+        io_seghs = ~hsSeg0.segs;
+        io_selhs = 4b0001;   
+    }   
+  }
+}

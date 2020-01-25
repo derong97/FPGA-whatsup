@@ -1,0 +1,73 @@
+module beta (
+
+    input easy_mode,
+    input pressed,
+    input rise,
+    input sc_hold,
+    
+    input clk,  // clock
+    input rst,  // reset
+    
+    // pass to mojo top for segment displays
+    output high_score[16],
+    output mainSeg3_char[4],       
+    output mainSeg2_char[4],
+    output mainSeg1_char[4],
+    output mainSeg0_char[4]
+    
+  ) {
+  
+  // temp variables
+  
+  alu game_alu;
+  
+  .clk(clk){
+  
+    .rst(rst){
+      cu game_cu;
+      regfiles game_regfiles;
+
+    }
+  }
+
+  always {
+  
+    // Pass signals from mojo top to CU unit
+    game_cu.easy_mode = easy_mode;
+    game_cu.pressed = pressed;
+    game_cu.rise = rise;
+    game_cu.sc_hold = sc_hold;
+    
+    // Pass current counter and player score from regfile to CU unit
+    game_cu.current_counter = game_regfiles.current_counter;
+    game_cu.player_score = game_regfiles.player_score;
+    
+    // Setup REGFILE unit 
+    game_regfiles.werf = game_cu.werf;
+    game_regfiles.wasel = game_cu.wasel;
+    game_regfiles.ra1sel = game_cu.ra1sel;
+    game_regfiles.ra2sel = game_cu.ra2sel;
+    
+    game_regfiles.rise = rise;
+    game_regfiles.restart = game_cu.restart;
+    game_regfiles.increment_old_counter = game_cu.increment_old_counter;
+    game_regfiles.update_hs = game_cu.update_hs;
+    
+    // ALU
+    game_alu.a = game_regfiles.out_a;
+    game_alu.b = game_regfiles.out_b;
+    game_alu.alufn = game_cu.alufn;
+    
+    // Output of ALU
+    game_regfiles.data = game_alu.f;
+    game_cu.alu_output = game_alu.f;
+    
+    // Pass to mojo top for display
+    high_score = game_regfiles.high_score;
+    mainSeg3_char = game_cu.mainSeg3_char;
+    mainSeg2_char = game_cu.mainSeg2_char;
+    mainSeg1_char = game_cu.mainSeg1_char;
+    mainSeg0_char = game_cu.mainSeg0_char;
+    
+  }
+}

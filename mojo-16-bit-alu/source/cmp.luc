@@ -1,0 +1,23 @@
+module cmp (
+    input alufn[6], // 6 bit opcode
+    input z, // from add.luc module
+    input v, // from add.luc module
+    input n, // from add.luc module
+    output o, // 16 bit output
+    output error[3] // 3 bit error output
+  ) {
+
+  sig lsb; // least sig bit
+  
+  always {
+    lsb = 0;
+    error = 0; 
+    case(alufn[2:1]) {
+      2b01: lsb = z; // comparison A = B
+      2b10: lsb = n ^ v; // comparison A < B 
+      2b11: lsb = z | (n ^ v); // comparison A <= B
+      default: error = 3b010;
+    }
+    o = c{15x{0}, lsb};
+  }
+}

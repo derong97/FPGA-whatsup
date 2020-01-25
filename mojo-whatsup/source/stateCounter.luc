@@ -1,0 +1,48 @@
+// default mojo clk oscillates at 50MHz\
+// 27-bit wide D flip-flop means that the counter ticks at around 2^26/50,000,000 = 1.3 seconds
+
+module stateCounter (
+    input clk,  // clock
+    input rst,  // reset
+    output easy,
+    output hard,
+    output hold
+  ) {
+  
+  //connect the rst signal to the counter, allowing us to use reset button to reset the counter
+  
+  .clk(clk) {
+    .rst(rst){
+      dff easyCounter[27];
+      dff hardCounter[26];
+      dff holdCounter[1];
+    }
+  }
+  
+  always {
+    easy = easyCounter.q[26]; 
+    // connects our output, inc_state, to the most significant bit of stateCounter.q, 
+    //so inc_state is set to 1 every at each rising edge.
+    easyCounter.d = easyCounter.q + 1;
+    if (easyCounter.q[26]==1) {
+      easyCounter.d[26] = 0;
+    }
+    
+    hard = hardCounter.q[25]; 
+    // connects our output, inc_state, to the most significant bit of stateCounter.q, 
+    //so inc_state is set to 1 every at each rising edge.
+    hardCounter.d = hardCounter.q + 1;
+    if (hardCounter.q[25]==1) {
+      hardCounter.d[25] = 0;
+    }
+    
+    hold = holdCounter.q[0]; 
+    // connects our output, inc_state, to the most significant bit of stateCounter.q, 
+    //so inc_state is set to 1 every at each rising edge.
+    holdCounter.d = holdCounter.q + 1;
+    if (holdCounter.q[0]==1) {
+      holdCounter.d[0] = 0;
+    }    
+    
+  }
+}

@@ -1,0 +1,19 @@
+module shift (
+  input a[16], // 16 bit input a
+  input b[16], // 16 bit input b
+  input alufn[6], // 6 bit opcode
+  output o[16], // 16 bit output
+  output error[3] // 3 bit error output
+  )
+  {
+  always{
+    o = 0;
+    error = 0; 
+    case(alufn[1:0]){
+      2b00: o = a << b[3-:4]; // shift left by b bits
+      2b01: o = a >> b[3-:4]; // shift right by b bits
+      2b11: o = $signed(a) >>> b[3-:4];  // shift right with signed extension
+      default: error = 3b001;
+    }
+  }
+}

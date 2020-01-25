@@ -1,0 +1,27 @@
+module muldiv(
+  input a[16], // 16 bit input a
+  input b[16], // 16 bit input b
+  input alufn[6], // 6 bit opcode
+  output o[16], // 16 bit output
+  output error[3], // 3 bit error output
+  output overflow
+  ){
+  sig c[32];
+  always{
+    o = 0;
+    error = 0;
+    overflow = 0;
+    case(alufn[0]){
+      1b0:
+        c = $signed(a)*$signed(b); // multiply
+        o = c[15:0];
+        if(a != 0 && $signed(c)/$signed(a) != $signed(b)){ // detects overflow
+          overflow = 1;
+        }
+      1b1: // divide
+        if(b==0) error = 3b011; // cannot divide by 0
+        else o = $signed(a)/$signed(b);
+      // no default since no possible invalid alufn here 
+    }
+  }
+}

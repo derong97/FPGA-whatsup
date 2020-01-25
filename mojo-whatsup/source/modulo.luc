@@ -1,0 +1,19 @@
+module modulo(
+  input a[16], // 16 bit input a
+  input b[16], // 16 bit input b
+  output o[16], // 16 bit output
+  output error[3] // 3 bit error output
+  ){
+  sig quotient[16];
+  always{
+    o = 0;
+    error = 0;
+    quotient = 0;
+    if (b==0) error = 3b011;
+    else{
+      quotient = a/b;
+      o = a - (b * quotient);
+    }
+  }
+  
+}

@@ -1,0 +1,20 @@
+module boole(
+  input a[16], // 16 bit input a
+  input b[16], // 16 bit input b
+  input alufn[6], // 6 bit opcode
+  output o[16], // 16 bit output
+  output error[3] // 3 bit error output
+  ){
+  always{
+    o = 0;
+    error = 0;
+    case(alufn[3:0]){
+      4b1000: o = a & b; // AND 
+      4b1110: o = a | b; // OR
+      4b0110: o = a ^ b; // XOR
+      4b1010: o = a; // 'A'
+      4b1100: o = b; // 'B'
+      default: error = 3b100;
+    }
+  }
+}

@@ -1,0 +1,80 @@
+module alu (
+    input a[16],  // 16 bit input a
+    input b[16],  // 16 bit input b
+    input alufn[6],  //6 bit input for alufn
+    output f[16], // the final output
+    output error[3],
+    output overflow
+  ) {
+  
+  // initializing different modules
+  add addMod;
+  boole booleMod;
+  shift shiftMod;
+  cmp cmpMod;
+  muldiv muldivMod;
+  modulo moduloMod;
+  
+  always {
+    //inputs of addMod
+    addMod.a = a;
+    addMod.b = b;
+    addMod.alufn = alufn;
+    
+    //inputs of booleMod
+    booleMod.a = a;
+    booleMod.b = b;
+    booleMod.alufn = alufn;
+    
+    //inputs of shiftMod
+    shiftMod.a = a; 
+    shiftMod.b = b; 
+    shiftMod.alufn = alufn;
+    
+    //inputs of cmpMod
+    cmpMod.z = addMod.z;
+    cmpMod.v = addMod.v;
+    cmpMod.n = addMod.n;
+    cmpMod.alufn = alufn;
+    
+    //inputs of muldivMod
+    muldivMod.a = a; 
+    muldivMod.b = b; 
+    muldivMod.alufn = alufn;
+    
+    //inputs of moduloMod
+    moduloMod.a = a; 
+    moduloMod.b = b; 
+      
+    f = 0;
+    error = 0;
+    overflow = 0;
+    case(alufn[5:4]) { // choosing which Module to use
+      2b00:
+        if(alufn[1] ==0 && alufn[2] ==0){
+          f = addMod.sum;
+          overflow = addMod.v;
+          error = addMod.error;
+        }
+        else if(alufn[1] ==1){
+          f = muldivMod.o;
+          overflow = muldivMod.overflow;
+          error = muldivMod.error;
+        }
+        else if(alufn[2] ==1){
+          f = moduloMod.o;
+          error = muldivMod.error;
+        }
+         
+      2b01:
+        f = booleMod.o;
+        error = booleMod.error;
+      2b10:
+        f = shiftMod.o;
+        error = shiftMod.error;
+      2b11:
+        f = cmpMod.o;
+        error = cmpMod.error;
+    } 
+  }
+}

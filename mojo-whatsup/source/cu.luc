@@ -1,0 +1,405 @@
+module cu (
+    input clk,  // clock
+    input rst,  // reset
+    
+    // Signals needed to determine next game state or other things
+    input pressed,
+    input rise,
+    input sc_hold,
+    input alu_output[16],
+    input easy_mode,
+    
+    // Signals needed to output current counter (and player score at the end) on main display
+    input current_counter[16],
+    input player_score[16],
+    
+    output alufn[6],
+    output ra1sel[2],
+    output ra2sel[4],
+    output werf,
+    output wasel[3],
+    
+    output restart,                // for regfiles to initialise current counter and streak number
+    output increment_old_counter,  // for regfile to increment_old_counter when time is up
+    output update_hs,              // for regfile to update highscore with player score
+    
+    // Pass to mojo top for main display
+    output mainSeg3_char[4],       
+    output mainSeg2_char[4],
+    output mainSeg1_char[4],
+    output mainSeg0_char[4]
+    
+) {
+
+  // fsm for the game
+  fsm game_state(.clk(clk)) = {
+    IDLE, 
+    STARTONE, 
+    STARTTWO, 
+    STARTTHREE, 
+    GO, 
+    CHECKEND, 
+    MOD5A, 
+    MOD5B, 
+    MOD7A, 
+    MOD7B, 
+    MOD10_5A, 
+    MOD10_5B, 
+    MOD10_7A, 
+    MOD10_7B, 
+    SHLDPRESS, 
+    SHLDNOTPRESS, 
+    ADDSCORE, 
+    CHECKSTREAK, 
+    ADDSTREAK, 
+    MINUSSTREAK, 
+    WAIT, 
+    CHECKHIGHSCORE, 
+    NOHIGHSCHORE, 
+    UPDATEHS
+  };
+  
+  // COUNTER DECLARATION
+  fsm counter_state(.clk(clk)) = {IDLE, ONE, TEN, HUNDRED}; //fsm for the counter
+  sig quotient[16];
+  sig quotientPS10[16];
+  sig temp1[16];
+  sig tempPS10[16];
+  
+  .clk(clk) {
+    .rst(rst){
+      // registers for segment displays
+      dff oneMain[4];
+      dff tenMain[4];
+      dff hundredMain[4];
+    }
+  }
+
+  always {
+  
+    alufn = 0;
+    ra1sel = 0;
+    ra2sel = 0;
+    werf = 0;
+    wasel = 0;
+    restart = 0;
+    increment_old_counter = 0;
+    update_hs = 0;
+    
+    mainSeg3_char = 15;
+    mainSeg2_char = 15;
+    mainSeg1_char = 15;
+    mainSeg0_char = 15;
+    
+    // For displaying numbers on main display
+    mainSeg0_char = oneMain.q; // one's place
+    mainSeg1_char = tenMain.q; // ten's place
+    mainSeg2_char = hundredMain.q; // hundred's place
+    mainSeg3_char = 15; // default no light on thousand's place
+    
+    if (rst) {
+      game_state.d = game_state.IDLE;
+      counter_state.d = counter_state.IDLE;
+    } else {
+      
+      // FSM states for main display
+      case(counter_state.q){
+      
+        counter_state.ONE:
+          quotient = current_counter / 10;
+          oneMain.d = current_counter - (10 * quotient);  
+          counter_state.d = counter_state.TEN;
+       
+        counter_state.TEN:
+          temp1 = current_counter /10;
+          quotient = temp1 / 10;
+          tenMain.d = temp1 - (10 * quotient);
+          counter_state.d = counter_state.HUNDRED;
+          
+        counter_state.HUNDRED:
+          temp1 = current_counter /100;
+          quotient = temp1 / 10;
+          hundredMain.d = temp1 - (10 * quotient);
+          counter_state.d = counter_state.ONE;
+      }
+      
+      // FSM states for game
+      case (game_state.q) {
+      
+        game_state.IDLE:
+          if(pressed) { // green button pressed
+          game_state.d = game_state.STARTTHREE;
+          update_hs = 0;                          // cancel update highscore if IDLE is reached from UPDATEHS
+          }
+          
+        game_state.STARTTHREE:
+          mainSeg3_char = 15;
+          mainSeg2_char = 15;
+          mainSeg1_char = 3; // display "3"
+          mainSeg0_char = 15;
+          if (rise) {
+            game_state.d = game_state.STARTTWO;
+          }
+          
+        game_state.STARTTWO:
+          mainSeg3_char = 15;
+          mainSeg2_char = 15;
+          mainSeg1_char = 2; // display "2"
+          mainSeg0_char = 15;
+          if (rise) {
+            game_state.d = game_state.STARTONE;
+          }
+          
+        game_state.STARTONE:
+          mainSeg3_char = 15;
+          mainSeg2_char = 15;
+          mainSeg1_char = 1; // display "1"
+          mainSeg0_char = 15;
+          if (rise) {
+            game_state.d = game_state.GO;
+          }
+          
+        game_state.GO:
+          mainSeg3_char = 15;
+          mainSeg2_char = b0110; // display "G"
+          mainSeg1_char = b0000; // display "O"
+          mainSeg0_char = 15;
+          if(rise){
+            game_state.d = game_state.CHECKEND;
+            restart = 1;                          // RESTART: consider putting this in STARTONE if timing issues
+            increment_old_counter = 0;            // STOP INCREMENT OLD COUNTER
+            counter_state.d = counter_state.ONE;
+          }
+        
+        game_state.CHECKEND:
+          restart = 0;         // STOP RESTART
+          alufn = 6b110111;    // CMPLE
+          ra1sel = b01;        // current counter
+          ra2sel = b0011;      // terminating number
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold){         // game has ended
+            game_state.d = game_state.CHECKHIGHSCORE;
+            //state1.d = state1.IDLE;
+          } else if (alu_output == 16b1 && sc_hold){ // game has not ended
+            game_state.d = game_state.MOD5A;
+          }
+          
+        game_state.MOD5A:
+          alufn = 6b000100;    // MODULO
+          ra1sel = b01;        // current counter
+          ra2sel = b0110;      // constant 5
+          werf = 1;
+          wasel = b0010;       // write result into temp
+          if(sc_hold) {
+            game_state.d = game_state.MOD5B;
+          }
+        
+        game_state.MOD5B:
+          alufn = 6b110011;    // CMPEQ
+          ra1sel = b10;        // temp
+          ra2sel = b0100;      // constant 0
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {
+          game_state.d = game_state.MOD7A;
+
+          } else if (alu_output == 16b1 && sc_hold) {
+            game_state.d = game_state.SHLDPRESS;        // if CC % 5 == 0, player should press green button
+          }
+        
+        game_state.MOD7A:
+          alufn = 6b000100;    // MODULO
+          ra1sel = b01;        // current counter
+          ra2sel = b0111;      // constant 7
+          werf = 1;
+          wasel = b0010;       // write result into temp
+          if(sc_hold) {
+            game_state.d = game_state.MOD7B;
+          }
+          
+        game_state.MOD7B:
+          alufn = 6b110011;    // CMPEQ
+          ra1sel = b10;        // temp
+          ra2sel = b0100;      // constant 0
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {
+          game_state.d = game_state.MOD10_5A;
+
+          } else if (alu_output == 16b1 && sc_hold) {
+            game_state.d = game_state.SHLDPRESS;        // if CC % 7 == 0, player should press green button
+          }
+          
+        game_state.MOD10_5A:
+          alufn = 6b000100;    // MODULO
+          ra1sel = b01;        // current counter
+          ra2sel = b1000;      // constant 10
+          werf = 1;
+          wasel = b0010;       // write result into temp
+          if(sc_hold) {
+            game_state.d = game_state.MOD10_5B;
+          }
+          
+        game_state.MOD10_5B:
+          alufn = 6b110011;    // CMPEQ
+          ra1sel = b10;        // temp
+          ra2sel = b0110;      // constant 5
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {
+          game_state.d = game_state.MOD10_7A;
+
+          } else if (alu_output == 16b1 && sc_hold) {
+            game_state.d = game_state.SHLDPRESS;        // if CC % 10 == 5, player should press green button
+          }
+          
+        game_state.MOD10_7A:
+          alufn = 6b000100;    // MODULO
+          ra1sel = b01;        // current counter
+          ra2sel = b1000;      // constant 10
+          werf = 1;
+          wasel = b0010;       // write result into temp
+          if(sc_hold) {
+            game_state.d = game_state.MOD10_7B;
+          }
+          
+        game_state.MOD10_7B:
+          alufn = 6b110011;    // CMPEQ
+          ra1sel = b10;        // temp
+          ra2sel = b0111;      // constant 7
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {
+          game_state.d = game_state.SHLDNOTPRESS;
+
+          } else if (alu_output == 16b1 && sc_hold) {
+            game_state.d = game_state.SHLDPRESS;        // if CC % 10 == 7, player should press green button
+          }
+          
+        game_state.SHLDPRESS:
+          if (pressed) {      // green button pressed
+          game_state.d = game_state.ADDSCORE;
+          }
+          alufn = 6b110111;      // CMPLE
+          ra1sel = b01;          // current counter
+          ra2sel = b0001;        // old counter
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {          // button is not pressed and time is up
+            game_state.d = game_state.MINUSSTREAK;
+          } // ELSE button is not pressed and time is NOT up, so remain in SHLDPRESS state
+          
+        game_state.SHLDNOTPRESS:
+          if (pressed) {      // green button pressed
+            game_state.d = game_state.MINUSSTREAK;
+          }
+          alufn = 6b110111;      // CMPLE
+          ra1sel = b01;          // current counter
+          ra2sel = b0001;        // old counter
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {          // button is not pressed and time is up
+            increment_old_counter = 1;                  // INCREMENT OLD COUNTER
+            game_state.d = game_state.CHECKEND;
+          } // ELSE button is not pressed and time is NOT up, so remain in SHLDNOTPRESS state
+          
+        game_state.ADDSCORE:
+          alufn = 6b000000;      // ADD
+          ra1sel = b00;          // player score
+          ra2sel = b0000;        // streak number
+          werf = 1;
+          wasel = b0000;         // write result into player score
+          game_state.d = game_state.CHECKSTREAK;
+          
+        game_state.CHECKSTREAK:
+          alufn = 6b110101;      // CMPLT
+          ra1sel = b11;          // streak number
+          if (easy_mode) {
+            ra2sel = b0110;      // constant 5 (max streak = 5)
+          } else {
+            ra2sel = b0111;      // constant 7 (max streak = 7)
+          }
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {              // Streak number is max and no need to increment
+            game_state.d = game_state.WAIT;
+          } else if (alu_output == 16b1 && sc_hold) {       // Increment streak number by 1
+            game_state.d = game_state.ADDSTREAK;
+          }
+          
+        game_state.ADDSTREAK:
+          alufn = 6b000000;      // ADD
+          ra1sel = b11;          // streak number
+          ra2sel = b0101;        // constant 1
+          werf = 1;
+          wasel = b0011;         // write result to streak number
+          game_state.d = game_state.WAIT;
+          
+        game_state.MINUSSTREAK:
+          alufn = 6b011100;      // 'B'
+          ra2sel = b0101;        // constant 1
+          werf = 1;
+          wasel = b0011;         // write result to streak number
+          game_state.d = game_state.WAIT;
+          
+        game_state.WAIT:
+          alufn = 6b110111;      // CMPLE
+          ra1sel = b01;          // current counter
+          ra2sel = b0001;        // old counter
+          werf = 0;
+          if (alu_output == 16b0 && sc_hold) {          // time is up
+            increment_old_counter = 1;                  // INCREMENT OLD COUNTER
+            game_state.d = game_state.CHECKEND;
+          } // ELSE button is not pressed and time is NOT up, so remain in SHLDNOTPRESS state
+          
+        game_state.CHECKHIGHSCORE:
+          mainSeg2_char = b1101; // E
+          mainSeg1_char = b1011; // N
+          mainSeg0_char = b1110; // D
+          alufn = 6b110111;      // CMPLE
+          ra1sel = b00;          // player score
+          ra2sel = b0010;        // high score
+          werf = 0;
+          if(alu_output == 16b1){
+            if(rise){
+              game_state.d = game_state.NOHIGHSCHORE;
+            }
+            else{
+            mainSeg2_char = b1011; // N
+            mainSeg1_char = b1010; // A
+            mainSeg0_char = b1100; // Y
+            }
+          } 
+          if (alu_output == 16b0){    // player's score is higher than highscore
+            if(rise){
+              counter_state.d = counter_state.IDLE;
+              game_state.d = game_state.UPDATEHS;
+            }
+            else{
+              mainSeg2_char = b1100; // Y
+              mainSeg1_char = b1010; // A
+              mainSeg0_char = b1100; // Y
+            }
+          }
+          
+        game_state.NOHIGHSCHORE:
+          // ONE'S PLACE
+          quotient = player_score / 10;
+          oneMain.d = player_score - (10 * quotient);
+          // TEN'S PLACE
+          tempPS10 = player_score / 10;
+          quotientPS10 = tempPS10 / 10;
+          tenMain.d = tempPS10 - (10 * quotientPS10);
+          // HUNDRED'S PLACE
+          hundredMain.d = 15;
+          
+        game_state.UPDATEHS:
+          update_hs = 1;      // UPDATE HIGHSCORE
+          // ONE'S PLACE
+          quotient = player_score / 10;
+          oneMain.d = player_score - (10 * quotient);
+          // TEN'S PLACE
+          tempPS10 = player_score / 10;
+          quotientPS10 = tempPS10 / 10;
+          tenMain.d = tempPS10 - (10 * quotientPS10);
+          // HUNDRED'S PLACE
+          hundredMain.d = 15;
+          
+      }
+    }
+    
+  }
+}
